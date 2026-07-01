@@ -1215,7 +1215,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     postProcessingService: postProcessingService,
                     customVocabulary: capturedCustomVocabulary,
                     customSystemPrompt: capturedCustomSystemPrompt,
-                    outputLanguage: self.outputLanguage
+                    outputLanguage: self.outputLanguage,
+                    preserveExactWording: self.preserveExactWording
                 )
                 finalTranscript = result.finalTranscript
                 processingStatus = Self.statusMessage(
@@ -2460,6 +2461,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         case postProcessingSucceeded
         case postProcessingFailedFallback
         case preservedExactWording
+        case preservedExactWordingTranslated
+        case preservedExactWordingTranslationFailedFallback
         case commandModeSucceeded(invocation: CommandInvocation)
         case commandModeFailedFallback(invocation: CommandInvocation)
 
@@ -2477,6 +2480,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     : "Post-processing failed, using raw transcript"
             case .preservedExactWording:
                 return "Preserved exact wording, skipped post-processing"
+            case .preservedExactWordingTranslated:
+                return "Preserved exact wording, translated to output language"
+            case .preservedExactWordingTranslationFailedFallback:
+                return "Verbatim translation failed, using untranslated raw transcript"
             case .commandModeSucceeded(let invocation):
                 return "Edit mode succeeded (\(invocation.rawValue))"
             case .commandModeFailedFallback(let invocation):
@@ -2492,7 +2499,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         postProcessingService: PostProcessingService,
         customVocabulary: String,
         customSystemPrompt: String,
-        outputLanguage: String = ""
+        outputLanguage: String = "",
+        preserveExactWording: Bool
     ) async -> (finalTranscript: String, outcome: TranscriptProcessingOutcome, prompt: String) {
         let trimmedRawTranscript = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -2521,11 +2529,34 @@ final class AppState: ObservableObject, @unchecked Sendable {
             return (macro.payload, .voiceMacro(command: macro.command), "")
         }
 
-        // Preserve-exact-wording mode: skip the LLM cleanup step so the
-        // raw transcript from the transcription service is used verbatim,
-        // including profanity and informal wording.
+        // Preserve-exact-wording mode. Two sub-cases so translation
+        // stays honored:
+        //
+        //   1. No Output Language set — skip the LLM entirely and
+        //      return the raw transcript verbatim.
+        //   2. Output Language IS set — route through a stripped-down
+        //      translate-only prompt. The user asked for another
+        //      language; silently dropping translation defeats their
+        //      settings. The translate-only path preserves filler,
+        //      informal wording, and profanity 1:1 while still hitting
+        //      the target language.
         if preserveExactWording {
-            return (trimmedRawTranscript, .preservedExactWording, "")
+            let targetLanguage = outputLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+            if targetLanguage.isEmpty {
+                return (trimmedRawTranscript, .preservedExactWording, "")
+            }
+            do {
+                let result = try await postProcessingService.translateVerbatim(
+                    transcript: trimmedRawTranscript,
+                    targetLanguage: targetLanguage
+                )
+                return (result.transcript, .preservedExactWordingTranslated, result.prompt)
+            } catch {
+                os_log(.error, log: recordingLog,
+                       "Verbatim translation failed: %{public}@",
+                       error.localizedDescription)
+                return (trimmedRawTranscript, .preservedExactWordingTranslationFailedFallback, "")
+            }
         }
 
         do {
@@ -2716,7 +2747,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         postProcessingService: postProcessingService,
                         customVocabulary: self.customVocabulary,
                         customSystemPrompt: self.customSystemPrompt,
-                        outputLanguage: self.outputLanguage
+                        outputLanguage: self.outputLanguage,
+                        preserveExactWording: self.preserveExactWording
                     )
                     try Task.checkCancellation()
 
@@ -2763,7 +2795,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
                         let shouldPersistRawDictationFallback: Bool
                         switch result.outcome {
-                        case .postProcessingFailedFallback:
+                        case .postProcessingFailedFallback,
+                             .preservedExactWordingTranslationFailedFallback:
                             shouldPersistRawDictationFallback = !trimmedFinalTranscript.isEmpty
                         default:
                             shouldPersistRawDictationFallback = false
