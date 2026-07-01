@@ -651,6 +651,9 @@ struct GeneralSettingsView: View {
                 SettingsCard("Output Language", icon: "globe") {
                     outputLanguageSection
                 }
+                SettingsCard("Local Transcription", icon: "cpu") {
+                    localTranscriptionSection
+                }
                 SettingsCard("Dictation Shortcuts", icon: "keyboard.fill") {
                     hotkeySection
                 }
@@ -1186,6 +1189,65 @@ struct GeneralSettingsView: View {
                 Label(validationMessage, systemImage: "xmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)
+            }
+        }
+    }
+
+    // MARK: Local Transcription
+
+    @State private var localBackends: [LocalBackend] = LocalBackendCatalog.load()
+
+    private var localTranscriptionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Use on-device transcription", isOn: $appState.localTranscriptionEnabled)
+
+            Text("When on, \(AppName.displayName) transcribes your voice entirely on this Mac. No audio leaves the device, and no API key or internet connection is required for transcription.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            HStack {
+                Text("Model")
+                    .frame(width: 90, alignment: .leading)
+                Picker("", selection: $appState.localTranscriptionBackendID) {
+                    ForEach(localBackends) { backend in
+                        Text(backend.displayName + (backend.isAvailable ? "" : " — unavailable"))
+                            .tag(backend.id)
+                    }
+                }
+                .labelsHidden()
+                .disabled(!appState.localTranscriptionEnabled)
+
+                Button(action: { localBackends = LocalBackendCatalog.load() }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help("Rescan the models folder")
+            }
+
+            if let selected = localBackends.first(where: { $0.id == appState.localTranscriptionBackendID }),
+               let reason = selected.unavailableReason {
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Adding Whisper models")
+                    .font(.caption.bold())
+                Text("Drop `ggml-*.bin` files into the folder below. They appear in the dropdown automatically. Get models from https://huggingface.co/ggerganov/whisper.cpp/tree/main.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    NSWorkspace.shared.open(LocalBackendCatalog.modelsRoot().appendingPathComponent("whisper"))
+                } label: {
+                    Label("Open models folder in Finder", systemImage: "folder")
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
             }
         }
     }

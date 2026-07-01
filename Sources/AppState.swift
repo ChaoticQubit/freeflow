@@ -224,6 +224,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let shortcutStartDelayStorageKey = "shortcut_start_delay"
     private let preserveClipboardStorageKey = "preserve_clipboard"
     private let preserveExactWordingStorageKey = "preserve_exact_wording"
+    private let localTranscriptionEnabledStorageKey = "local_transcription_enabled"
+    private let localTranscriptionBackendIDStorageKey = "local_transcription_backend_id"
     private let keepDictationInClipboardHistoryStorageKey = "keep_dictation_in_clipboard_history"
     private let pressEnterVoiceCommandStorageKey = "press_enter_voice_command_enabled"
     private let alertSoundsEnabledStorageKey = "alert_sounds_enabled"
@@ -512,6 +514,23 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// When true, dictation runs entirely on-device via the backend
+    /// identified by `localTranscriptionBackendID`. No audio is
+    /// uploaded to any remote service.
+    @Published var localTranscriptionEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(localTranscriptionEnabled, forKey: localTranscriptionEnabledStorageKey)
+        }
+    }
+
+    /// Stable ID of the currently selected local backend (see
+    /// `LocalBackendCatalog`). Defaults to Apple Speech.
+    @Published var localTranscriptionBackendID: String {
+        didSet {
+            UserDefaults.standard.set(localTranscriptionBackendID, forKey: localTranscriptionBackendIDStorageKey)
+        }
+    }
+
     @Published var keepDictationInClipboardHistory: Bool {
         didSet {
             UserDefaults.standard.set(keepDictationInClipboardHistory, forKey: keepDictationInClipboardHistoryStorageKey)
@@ -684,6 +703,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
             ? true
             : UserDefaults.standard.bool(forKey: preserveClipboardStorageKey)
         let preserveExactWording = UserDefaults.standard.bool(forKey: preserveExactWordingStorageKey)
+        let localTranscriptionEnabled = UserDefaults.standard.bool(forKey: localTranscriptionEnabledStorageKey)
+        let localTranscriptionBackendID = UserDefaults.standard.string(forKey: localTranscriptionBackendIDStorageKey)
+            ?? LocalBackendCatalog.appleSpeechID
         let keepDictationInClipboardHistory = UserDefaults.standard.bool(forKey: keepDictationInClipboardHistoryStorageKey)
         let realtimeStreamingEnabled = UserDefaults.standard.bool(forKey: realtimeStreamingEnabledStorageKey)
         let realtimeStreamingModel = UserDefaults.standard.string(forKey: realtimeStreamingModelStorageKey) ?? ""
@@ -759,6 +781,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.shortcutStartDelay = shortcutStartDelay
         self.preserveClipboard = preserveClipboard
         self.preserveExactWording = preserveExactWording
+        self.localTranscriptionEnabled = localTranscriptionEnabled
+        self.localTranscriptionBackendID = localTranscriptionBackendID
         self.keepDictationInClipboardHistory = keepDictationInClipboardHistory
         self.realtimeStreamingEnabled = realtimeStreamingEnabled
         self.realtimeStreamingModel = realtimeStreamingModel
@@ -1170,7 +1194,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
         Task {
             do {
-                let transcriptionService = try makeTranscriptionService()
+                let transcriptionService = try makeActiveTranscriber()
                 let rawTranscript = try await transcriptionService.transcribe(fileURL: audioURL)
                 let parsedTranscript = Self.parseTranscriptCommands(
                     from: rawTranscript,
@@ -2525,7 +2549,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     /// strict order to avoid paying for both when realtime succeeds.
     private static func resolveRawTranscript(
         realtimeService: RealtimeTranscriptionService?,
-        fileService: TranscriptionService,
+        fileService: Transcriber,
         fileURL: URL
     ) async throws -> String {
         if let realtimeService {
@@ -2544,6 +2568,23 @@ final class AppState: ObservableObject, @unchecked Sendable {
             }
         }
         return try await fileService.transcribe(fileURL: fileURL)
+    }
+
+    /// Build the transcriber (local or remote) that dictation should
+    /// use for the current session. When the user has flipped the
+    /// "Use on-device transcription" toggle we pick a local backend;
+    /// otherwise we return the existing HTTP `TranscriptionService`.
+    ///
+    /// Falls back to Apple Speech if the persisted backend ID no
+    /// longer maps to a known backend (e.g. the user deleted the model
+    /// file since last launch).
+    private func makeActiveTranscriber() throws -> Transcriber {
+        guard localTranscriptionEnabled else {
+            return try makeTranscriptionService()
+        }
+        let backend = LocalBackendCatalog.backend(forID: localTranscriptionBackendID)
+            ?? LocalBackendCatalog.backend(forID: LocalBackendCatalog.appleSpeechID)!
+        return try LocalBackendCatalog.makeTranscriber(for: backend)
     }
 
     private func stopAndTranscribe() {
@@ -2610,7 +2651,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
             instructionExecutionGuardEnabled: instructionExecutionGuardEnabled
         )
 
-            let activeRealtime = self.realtimeService
+            // Local transcription is file-based only; ignore any
+            // WebSocket realtime session we may have opened so we
+            // never fall through to the remote provider when the user
+            // asked for on-device processing.
+            let activeRealtime = self.localTranscriptionEnabled ? nil : self.realtimeService
             self.realtimeService = nil
             self.audioRecorder.onPCM16Samples = nil
             self.transcriptionTask?.cancel()
@@ -2630,7 +2675,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     activeRealtime?.cancel()
                 }
                 do {
-                    let transcriptionService = try self.makeTranscriptionService()
+                    let transcriptionService = try self.makeActiveTranscriber()
                     async let transcript = Self.resolveRawTranscript(
                         realtimeService: activeRealtime,
                         fileService: transcriptionService,
