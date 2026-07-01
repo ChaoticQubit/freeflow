@@ -214,8 +214,42 @@ final class UpdateManager: ObservableObject {
 
     // MARK: - Check for Updates
 
+    /// Return the URL of the local update script if one is present.
+    ///
+    /// When this file exists, `checkForUpdates(userInitiated:)` runs it
+    /// instead of downloading the latest DMG from GitHub. That lets
+    /// users who build FreeFlow from source (and may have local
+    /// patches) update via `git pull` + rebuild without losing their
+    /// changes.
+    ///
+    /// The path is:
+    ///   ~/Library/Application Support/FreeFlow/local-update.command
+    static func localUpdateScriptURL() -> URL? {
+        guard let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            return nil
+        }
+        let url = appSupport
+            .appendingPathComponent("FreeFlow")
+            .appendingPathComponent("local-update.command")
+        return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
+    }
+
     @MainActor
     func checkForUpdates(userInitiated: Bool) async {
+        // Local-update override: if a local update script is present,
+        // running it does the update (git pull + rebuild + reinstall).
+        // Auto-checks skip silently so the script never runs behind the
+        // user's back; manual clicks launch it in Terminal.
+        if let scriptURL = Self.localUpdateScriptURL() {
+            if userInitiated {
+                launchLocalUpdateScript(at: scriptURL)
+            }
+            return
+        }
+
         let currentBuildTag = Bundle.main.infoDictionary?["FreeFlowBuildTag"] as? String
         let currentVersionString = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 
@@ -697,6 +731,16 @@ final class UpdateManager: ObservableObject {
         activeDownloadTask = nil
         downloadProgress = nil
         updateStatus = .idle
+    }
+
+    /// Launch the local update script in Terminal.app.
+    ///
+    /// `.command` files are macOS shell scripts that Terminal opens in
+    /// a new window when double-clicked. Opening via `NSWorkspace`
+    /// gives the user a visible progress log and lets them close the
+    /// window when the update finishes.
+    private func launchLocalUpdateScript(at url: URL) {
+        NSWorkspace.shared.open(url)
     }
 
     func downloadAndInstall(release: GitHubRelease) {
