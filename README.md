@@ -29,7 +29,7 @@ FreeFlow is a free Mac dictation app inspired by [Wispr Flow](https://wisprflow.
 
 ## Quick Start
 
-1. Install FreeFlow - download the app from above, [click here](https://github.com/zachlatta/freeflow/releases/latest/download/FreeFlow.dmg), or use Homebrew:
+1. Install FreeFlow - [download FreeFlow.dmg](https://github.com/zachlatta/freeflow/releases/latest/download/FreeFlow.dmg), or use Homebrew:
 
    ```sh
    brew tap zachlatta/freeflow https://github.com/zachlatta/freeflow
