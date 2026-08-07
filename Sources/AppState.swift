@@ -704,7 +704,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             : soundVolume > 0
         
         let initialMacros: [VoiceMacro]
-        if let data = UserDefaults.standard.data(forKey: "voice_macros"),
+        if let data = AppState.jsonData(forKey: "voice_macros"),
            let decoded = try? JSONDecoder().decode([VoiceMacro].self, from: data) {
             initialMacros = decoded
         } else {
@@ -924,8 +924,23 @@ final class AppState: ObservableObject, @unchecked Sendable {
         )
     }
 
+    /// Reads a setting the app stores as JSON-encoded `Data`, falling back to a
+    /// plain JSON string under the same key.
+    ///
+    /// The fallback exists so these settings can be scripted. `defaults write`
+    /// cannot produce a `Data` value without hex-encoding the payload first, so
+    /// without this the shortcut and macro keys are impractical to set from a
+    /// shell script, a dotfiles repo, or a Nix module. Writes still use `Data`,
+    /// so the stored format is unchanged.
+    static func jsonData(forKey key: String) -> Data? {
+        if let data = UserDefaults.standard.data(forKey: key) {
+            return data
+        }
+        return UserDefaults.standard.string(forKey: key)?.data(using: .utf8)
+    }
+
     private static func loadShortcut(forKey key: String) -> StoredShortcutLoadResult {
-        guard let data = UserDefaults.standard.data(forKey: key) else {
+        guard let data = jsonData(forKey: key) else {
             return StoredShortcutLoadResult(binding: nil, hadStoredValue: false, didNormalize: false)
         }
         guard let decoded = try? JSONDecoder().decode(ShortcutBinding.self, from: data) else {
