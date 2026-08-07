@@ -201,25 +201,36 @@ defaults write com.zachlatta.freeflow voice_macros -string \
 
 The keys are `hold_shortcut`, `toggle_shortcut`, `copy_again_shortcut`, their `saved_*_custom_shortcut` counterparts, and `voice_macros`.
 
-The simplest way to find the JSON for a shortcut is to set it once in Settings and read it back:
+A voice macro's `id` is generated when you leave it out, so you only need `command` and `payload`.
+
+The simplest way to find the JSON for a shortcut is to set it once in Settings and read it back. FreeFlow writes these keys as binary data, which `defaults read` prints as hex, so decode it:
 
 ```bash
-defaults read com.zachlatta.freeflow hold_shortcut
+defaults export com.zachlatta.freeflow - \
+  | plutil -extract hold_shortcut raw -o - - \
+  | base64 --decode
 ```
+
+A value you wrote yourself with `-string` is stored as text, so plain `defaults read com.zachlatta.freeflow hold_shortcut` shows it as-is.
 
 ### API credentials
 
 These are not stored in `defaults`. Write `~/Library/Application Support/FreeFlow/.settings` instead, and keep it owner-readable only so your key is not world-readable:
 
+Create the file with restrictive permissions *before* writing the key to it, so it is never briefly readable by other local users:
+
 ```bash
-mkdir -p ~/Library/Application\ Support/FreeFlow
-cat > ~/Library/Application\ Support/FreeFlow/.settings <<'JSON'
+SETTINGS=~/Library/Application\ Support/FreeFlow/.settings
+
+mkdir -p "$(dirname "$SETTINGS")"
+(umask 077; : > "$SETTINGS")
+
+cat > "$SETTINGS" <<'JSON'
 {
   "groq_api_key": "gsk_...",
   "api_base_url": "https://api.groq.com/openai/v1"
 }
 JSON
-chmod 600 ~/Library/Application\ Support/FreeFlow/.settings
 ```
 
 The recognised keys are `groq_api_key`, `api_base_url`, `transcription_api_url` and `transcription_api_key`. Omit any you do not need.
