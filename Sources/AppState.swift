@@ -13,6 +13,25 @@ struct VoiceMacro: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var command: String
     var payload: String
+
+    init(id: UUID = UUID(), command: String, payload: String) {
+        self.id = id
+        self.command = command
+        self.payload = payload
+    }
+
+    /// Generates `id` when it is absent, so macros can be written by hand.
+    ///
+    /// The default value above does not help here: Swift's synthesized decoder
+    /// ignores it and fails with `keyNotFound` on a missing `id`, which would
+    /// silently leave a hand-written macro list empty. Encoding still writes
+    /// `id`, so round-tripping through the app is unchanged.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        command = try container.decode(String.self, forKey: .command)
+        payload = try container.decode(String.self, forKey: .payload)
+    }
 }
 
 struct PrecomputedMacro {
