@@ -294,7 +294,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         didSet {
             persistAPIKey(apiKey)
             rebuildContextService()
-            scheduleTemperatureCapabilityProbes()
         }
     }
 
@@ -302,7 +301,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         didSet {
             persistAPIBaseURL(apiBaseURL)
             rebuildContextService()
-            scheduleTemperatureCapabilityProbes()
         }
     }
 
@@ -327,14 +325,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published var postProcessingModel: String {
         didSet {
             UserDefaults.standard.set(postProcessingModel, forKey: postProcessingModelStorageKey)
-            scheduleTemperatureCapabilityProbes()
         }
     }
 
     @Published var postProcessingFallbackModel: String {
         didSet {
             UserDefaults.standard.set(postProcessingFallbackModel, forKey: postProcessingFallbackModelStorageKey)
-            scheduleTemperatureCapabilityProbes()
         }
     }
 
@@ -342,7 +338,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         didSet {
             UserDefaults.standard.set(contextModel, forKey: contextModelStorageKey)
             rebuildContextService()
-            scheduleTemperatureCapabilityProbes()
         }
     }
 
@@ -636,7 +631,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var pendingMicrophonePermissionTriggerMode: RecordingTriggerMode?
     private var pendingMicrophonePermissionSelectionSnapshot: AppSelectionSnapshot?
     private var pendingMicrophonePermissionManualCommandRequested: Bool?
-    private let temperatureProbeCoordinator = TemperatureCapabilityProbeCoordinator()
     private let postTranscriptionUpdateReminderDuration: TimeInterval = 7
 
     init() {
@@ -1192,29 +1186,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
             pipelineHistory.remove(at: index)
         } catch {
             errorMessage = "Unable to delete run history entry: \(error.localizedDescription)"
-        }
-    }
-
-    private func scheduleTemperatureCapabilityProbes() {
-        let key = apiKey
-        let baseURL = apiBaseURL
-        let cleanupModels = Array(Set([postProcessingModel, postProcessingFallbackModel].filter { !$0.isEmpty }))
-        let context = contextModel
-        guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            temperatureProbeCoordinator.schedule([]) { _ in }
-            return
-        }
-        var requests: [URLRequest] = []
-        for model in cleanupModels {
-            if let request = TemperatureCapabilityProbe.request(baseURL: baseURL, apiKey: key, model: model, temperature: 0, isPostProcessing: true) {
-                requests.append(request)
-            }
-        }
-        if let request = TemperatureCapabilityProbe.request(baseURL: baseURL, apiKey: key, model: context, temperature: 0.2) {
-            requests.append(request)
-        }
-        temperatureProbeCoordinator.schedule(requests) { request in
-            await TemperatureCapabilityProbe.probe(request)
         }
     }
 

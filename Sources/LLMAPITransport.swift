@@ -106,10 +106,9 @@ enum LLMAPITransport {
         let param = (details["param"] as? String ?? "").lowercased()
         let message = (details["message"] as? String ?? "").lowercased()
         let unsupportedCode = code == "unsupported_parameter" || code == "unsupported_value"
-        let identifiesTemperature = param == "temperature" ||
-            ((param.isEmpty || param == "null") && message.contains("temperature") &&
-                (message.contains("unsupported") || message.contains("not support") || message.contains("does not support")))
-        guard unsupportedCode && identifiesTemperature else {
+        let unsupportedMessage = message.contains("unsupported") ||
+            message.contains("not supported") || message.contains("does not support")
+        guard unsupportedCode && param == "temperature" && unsupportedMessage else {
             return nil
         }
         return requestWithoutTemperature(request)

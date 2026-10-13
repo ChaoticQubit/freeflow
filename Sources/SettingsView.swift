@@ -1040,13 +1040,16 @@ struct GeneralSettingsView: View {
         keyValidationSuccess = false
 
         Task {
+            let resolvedBaseURL = baseURL.isEmpty ? AppState.defaultAPIBaseURL : baseURL
             let valid = await TranscriptionService.validateAPIKey(
                 key,
-                baseURL: baseURL.isEmpty ? AppState.defaultAPIBaseURL : baseURL
+                baseURL: resolvedBaseURL
             )
             await MainActor.run {
                 isValidatingKey = false
                 if valid {
+                    apiBaseURLInput = resolvedBaseURL
+                    appState.apiBaseURL = resolvedBaseURL
                     appState.apiKey = key
                     keyValidationSuccess = true
                 } else {

@@ -1137,7 +1137,6 @@ struct SetupView: View {
         let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseURL = apiBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedBaseURL = baseURL.isEmpty ? AppState.defaultAPIBaseURL : baseURL
-        appState.apiBaseURL = resolvedBaseURL
         isValidatingKey = true
         keyValidationError = nil
 
@@ -1146,6 +1145,7 @@ struct SetupView: View {
             await MainActor.run {
                 isValidatingKey = false
                 if valid {
+                    appState.apiBaseURL = resolvedBaseURL
                     appState.apiKey = key
                     withAnimation {
                         currentStep = nextStep(currentStep)

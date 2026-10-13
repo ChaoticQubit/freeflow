@@ -36,7 +36,7 @@ private func bodyData(_ request: URLRequest) -> Data? {
 
 enum LLMAPITransportTests {
     static func run() async {
-        func perform(_ replies: [(Int, String)], body payload: [String: Any] = ["model": "fixture", "temperature": 0, "messages": []], endpoint: String = UUID().uuidString, cache: TemperatureCapabilityCache = TemperatureCapabilityCache(defaults: UserDefaults(suiteName: "transport-\(UUID().uuidString)")!)) async throws -> [URLRequest] {
+        func perform(_ replies: [(Int, String)], body payload: [String: Any] = ["model": "fixture", "temperature": 0, "top_p": 0.7, "max_completion_tokens": 128, "messages": []], endpoint: String = UUID().uuidString, cache: TemperatureCapabilityCache = TemperatureCapabilityCache(defaults: UserDefaults(suiteName: "transport-\(UUID().uuidString)")!)) async throws -> [URLRequest] {
             StubLLMURLProtocol.requests = []
             var remaining = replies
             StubLLMURLProtocol.handler = { _ in
@@ -65,7 +65,7 @@ enum LLMAPITransportTests {
         let original = try! JSONSerialization.jsonObject(with: bodyData(retry[0])!) as! [String: Any]
         let retried = try! JSONSerialization.jsonObject(with: bodyData(retry[1])!) as! [String: Any]
         TestSupport.expect(original["temperature"] != nil, "Initial body retains temperature")
-        TestSupport.expect(retried["temperature"] == nil && retried["model"] as? String == "fixture" && retried["messages"] != nil, "Retry removes only temperature")
+        TestSupport.expect(retried["temperature"] == nil && retried["model"] as? String == "fixture" && retried["messages"] != nil && retried["top_p"] as? Double == 0.7 && retried["max_completion_tokens"] as? Int == 128, "Retry removes only temperature")
         TestSupport.expect(retry.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer synthetic-test-token" && $0.value(forHTTPHeaderField: "Content-Type") == "application/json" }, "Retry preserves authorization and content type")
 
         let openAIStyle = "{\"error\":{\"code\":\"unsupported_value\",\"param\":\"temperature\",\"message\":\"Unsupported value: 'temperature' does not support 0 with this model. Only the default (1) value is supported.\"}}"
@@ -77,8 +77,16 @@ enum LLMAPITransportTests {
         TestSupport.expect(wrongParam.count == 1, "Unsupported parameter other than temperature does not retry")
 
         let nullParam = "{\"error\":{\"code\":\"unsupported_parameter\",\"param\":null,\"message\":\"temperature is not supported with this model\"}}"
-        let nullParamRetry = try! await perform([(400, nullParam), (200, accepted)])
-        TestSupport.expect(nullParamRetry.count == 2, "Temperature message fallback retries when param is null")
+        let nullParamResult = try! await perform([(400, nullParam)])
+        TestSupport.expect(nullParamResult.count == 1, "Missing temperature parameter identity does not retry")
+
+        let mixedParameter = "{\"error\":{\"code\":\"unsupported_parameter\",\"param\":null,\"message\":\"temperature is supported; top_p is unsupported\"}}"
+        let mixedParameterResult = try! await perform([(400, mixedParameter)])
+        TestSupport.expect(mixedParameterResult.count == 1, "Mixed-parameter rejection does not remove temperature")
+
+        let unrelatedMessage = "{\"error\":{\"code\":\"unsupported_parameter\",\"param\":\"temperature\",\"message\":\"value must be between 0 and 2\"}}"
+        let unrelatedMessageResult = try! await perform([(400, unrelatedMessage)])
+        TestSupport.expect(unrelatedMessageResult.count == 1, "Temperature validation errors do not imply unsupported capability")
 
         let success = try! await perform([(200, accepted)])
         TestSupport.expect(success.count == 1, "Successful call does not retry")
@@ -104,11 +112,11 @@ enum LLMAPITransportTests {
         var sharedRequest = URLRequest(url: URL(string: "https://provider.invalid/\(sharedEndpoint)/chat")!)
         sharedRequest.setValue("Bearer synthetic-test-token", forHTTPHeaderField: "Authorization")
         sharedRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        sharedRequest.httpBody = try! JSONSerialization.data(withJSONObject: ["model": "fixture", "temperature": 0, "messages": []])
-        let lateProbeObservation = TemperatureCapabilityCache.shared.beginObservation(for: sharedRequest)
+        sharedRequest.httpBody = try! JSONSerialization.data(withJSONObject: ["model": "fixture", "temperature": 0, "top_p": 0.7, "max_completion_tokens": 128, "messages": []])
+        let staleObservation = TemperatureCapabilityCache.shared.beginObservation(for: sharedRequest)
         _ = try! await perform([(400, rejected), (200, accepted)], endpoint: sharedEndpoint, cache: TemperatureCapabilityCache.shared)
-        TemperatureCapabilityCache.shared.record(.supported, for: sharedRequest, observation: lateProbeObservation)
-        TestSupport.expect(TemperatureCapabilityCache.shared.capability(for: sharedRequest) == .unsupported, "Shared production cache ignores late successful probe after newer runtime rejection")
+        TemperatureCapabilityCache.shared.record(.supported, for: sharedRequest, observation: staleObservation)
+        TestSupport.expect(TemperatureCapabilityCache.shared.capability(for: sharedRequest) == .unsupported, "Shared production cache ignores stale success after newer runtime rejection")
 
         let supportedCache = TemperatureCapabilityCache(defaults: UserDefaults(suiteName: "transport-supported-\(UUID().uuidString)")!)
         let supportedEndpoint = UUID().uuidString

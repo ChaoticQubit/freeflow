@@ -46,7 +46,13 @@ class TranscriptionService {
     }
 
     // Validate API key by hitting a lightweight endpoint
-    static func validateAPIKey(_ key: String, baseURL: String = "https://api.groq.com/openai/v1") async -> Bool {
+    static func validateAPIKey(
+        _ key: String,
+        baseURL: String = "https://api.groq.com/openai/v1",
+        transport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            try await LLMAPITransport.data(for: request)
+        }
+    ) async -> Bool {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         guard let baseURL = try? normalizedBaseURL(from: baseURL) else { return false }
@@ -56,7 +62,7 @@ class TranscriptionService {
         request.setValue("Bearer \(trimmed)", forHTTPHeaderField: "Authorization")
 
         do {
-            let (_, response) = try await LLMAPITransport.data(for: request)
+            let (_, response) = try await transport(request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             return status == 200
         } catch {

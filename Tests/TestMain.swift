@@ -5,7 +5,7 @@ struct FreeFlowTests {
     static func main() async {
         AppContextServiceTests.run()
         await LLMAPITransportTests.run()
-        await TemperatureCapabilityCacheTests.run()
+        TemperatureCapabilityCacheTests.run()
         ModelConfigurationTests.run()
         RecordingCaptureTimingTests.run()
         RecordingTimerPreferenceTests.run()
@@ -15,6 +15,7 @@ struct FreeFlowTests {
         PostProcessingServiceTests.run()
         TranscriptionErrorPresentationCoreTests.run()
         TranscriptTextCoreTests.run()
+        await TranscriptionServiceTests.run()
         print("FreeFlowTests passed")
     }
 }

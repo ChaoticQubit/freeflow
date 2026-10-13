@@ -65,6 +65,12 @@ final class TemperatureCapabilityCache: @unchecked Sendable {
         guard let digest = Self.digest(for: request) else { return }
         if let observation, observation.digest != digest || observation.revision != revisions[digest] { return }
         var entries = load() ?? []
+        if let existing = entries.first(where: { $0.digest == digest }),
+           existing.capability == capability,
+           now().timeIntervalSince(existing.observedAt) >= 0,
+           now().timeIntervalSince(existing.observedAt) < lifetime / 2 {
+            return
+        }
         entries.removeAll { $0.digest == digest }
         entries.append(Entry(digest: digest, capability: capability, observedAt: now()))
         entries.sort { $0.observedAt > $1.observedAt }
