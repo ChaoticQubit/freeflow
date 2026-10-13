@@ -8,6 +8,17 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.3.2] - 2026-10-13
+
+### Fixed
+
+- Custom OpenAI-compatible providers now retry once without `temperature` only when a provider explicitly rejects that parameter, while preserving request credentials and other request options.
+- Provider endpoint and credential changes are validated as a complete configuration before they are saved, preventing a previously saved credential from being sent to a newly entered endpoint.
+
+### Improved
+
+- Removed background capability probes. Compatibility is learned from the first real request, avoiding settings-triggered provider calls.
+
 ## [1.3.1] - 2026-10-09
 
 ### Fixed
