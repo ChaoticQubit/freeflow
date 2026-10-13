@@ -15,9 +15,13 @@ TEST_RUNNER = $(BUILD_DIR)/FreeFlowTests
 TEST_PRODUCTION_SOURCES = \
 	Sources/AppContextService.swift \
 	Sources/AppName.swift \
+	Sources/ContextInferenceFailure.swift \
 	Sources/LLMAPITransport.swift \
 	Sources/LLMCooldownManager.swift \
 	Sources/ModelConfiguration.swift \
+	Sources/PostProcessingService.swift \
+	Sources/RecordingCaptureTiming.swift \
+	Sources/RecordingTimerPreference.swift \
 	Sources/TranscriptionErrorPresentationCore.swift \
 	Sources/TranscriptTextCore.swift \
 	Sources/TemperatureCapabilityCache.swift \
