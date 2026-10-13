@@ -65,9 +65,7 @@ struct ProviderSettingsFields: View {
 
     private func commitAPIBaseURL() {
         let trimmed = apiBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedBaseURL = trimmed.isEmpty ? AppState.defaultAPIBaseURL : trimmed
-        apiBaseURLInput = resolvedBaseURL
-        appState.apiBaseURL = resolvedBaseURL
+        apiBaseURLInput = trimmed.isEmpty ? AppState.defaultAPIBaseURL : trimmed
     }
 
     private func commitTranscriptionModel() {
@@ -175,7 +173,6 @@ struct ProviderSettingsFields: View {
 
                 Button("Reset to Default") {
                     apiBaseURLInput = AppState.defaultAPIBaseURL
-                    appState.apiBaseURL = AppState.defaultAPIBaseURL
                 }
                 .font(.caption)
             }
@@ -1040,17 +1037,19 @@ struct GeneralSettingsView: View {
         keyValidationSuccess = false
 
         Task {
-            let resolvedBaseURL = baseURL.isEmpty ? AppState.defaultAPIBaseURL : baseURL
-            let valid = await TranscriptionService.validateAPIKey(
-                key,
-                baseURL: resolvedBaseURL
-            )
+            let valid = await APIConfigurationSaveFlow.validateAndApply(
+                apiKey: key,
+                baseURL: baseURL
+            ) { configuration in
+                apiBaseURLInput = configuration.baseURL
+                appState.updateAPIConfiguration(
+                    apiKey: configuration.apiKey,
+                    baseURL: configuration.baseURL
+                )
+            }
             await MainActor.run {
                 isValidatingKey = false
                 if valid {
-                    apiBaseURLInput = resolvedBaseURL
-                    appState.apiBaseURL = resolvedBaseURL
-                    appState.apiKey = key
                     keyValidationSuccess = true
                 } else {
                     keyValidationError = "Validation failed. Please check your API key and provider settings, then try again."

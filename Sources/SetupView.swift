@@ -1141,12 +1141,19 @@ struct SetupView: View {
         keyValidationError = nil
 
         Task {
-            let valid = await TranscriptionService.validateAPIKey(key, baseURL: resolvedBaseURL)
+            let valid = await APIConfigurationSaveFlow.validateAndApply(
+                apiKey: key,
+                baseURL: resolvedBaseURL
+            ) { configuration in
+                apiBaseURLInput = configuration.baseURL
+                appState.updateAPIConfiguration(
+                    apiKey: configuration.apiKey,
+                    baseURL: configuration.baseURL
+                )
+            }
             await MainActor.run {
                 isValidatingKey = false
                 if valid {
-                    appState.apiBaseURL = resolvedBaseURL
-                    appState.apiKey = key
                     withAnimation {
                         currentStep = nextStep(currentStep)
                     }

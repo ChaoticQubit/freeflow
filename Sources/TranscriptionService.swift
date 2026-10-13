@@ -3,6 +3,32 @@ import os.log
 
 private let transcriptionLog = OSLog(subsystem: "com.zachlatta.freeflow", category: "Transcription")
 
+struct ValidatedAPIConfiguration: Sendable {
+    let apiKey: String
+    let baseURL: String
+}
+
+enum APIConfigurationSaveFlow {
+    static let defaultBaseURL = "https://api.groq.com/openai/v1"
+
+    @MainActor
+    static func validateAndApply(
+        apiKey: String,
+        baseURL: String,
+        validator: @escaping @Sendable (String, String) async -> Bool = { key, url in
+            await TranscriptionService.validateAPIKey(key, baseURL: url)
+        },
+        apply: (ValidatedAPIConfiguration) -> Void
+    ) async -> Bool {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedBaseURL = trimmedBaseURL.isEmpty ? defaultBaseURL : trimmedBaseURL
+        guard await validator(key, resolvedBaseURL) else { return false }
+        apply(ValidatedAPIConfiguration(apiKey: key, baseURL: resolvedBaseURL))
+        return true
+    }
+}
+
 class TranscriptionService {
     private static let modelsSupportingVerboseJSON: Set<String> = [
         // OpenAI's Whisper model supports segment metadata. The newer

@@ -292,6 +292,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     @Published var apiKey: String {
         didSet {
+            guard !isApplyingAPIConfiguration else { return }
             persistAPIKey(apiKey)
             rebuildContextService()
         }
@@ -299,6 +300,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     @Published var apiBaseURL: String {
         didSet {
+            guard !isApplyingAPIConfiguration else { return }
             persistAPIBaseURL(apiBaseURL)
             rebuildContextService()
         }
@@ -631,6 +633,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var pendingMicrophonePermissionTriggerMode: RecordingTriggerMode?
     private var pendingMicrophonePermissionSelectionSnapshot: AppSelectionSnapshot?
     private var pendingMicrophonePermissionManualCommandRequested: Bool?
+    private var isApplyingAPIConfiguration = false
     private let postTranscriptionUpdateReminderDuration: TimeInterval = 7
 
     init() {
@@ -857,7 +860,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
-    static let defaultAPIBaseURL = "https://api.groq.com/openai/v1"
+    static let defaultAPIBaseURL = APIConfigurationSaveFlow.defaultBaseURL
 
     private struct StoredShortcutConfiguration {
         let hold: ShortcutBinding
@@ -1000,6 +1003,16 @@ final class AppState: ObservableObject, @unchecked Sendable {
             contextScreenshotMaxDimension: contextScreenshotMaxDimension,
             desktopScreenshotFallbackEnabled: desktopScreenshotFallbackEnabled
         )
+    }
+
+    func updateAPIConfiguration(apiKey: String, baseURL: String) {
+        isApplyingAPIConfiguration = true
+        self.apiKey = apiKey
+        self.apiBaseURL = baseURL
+        isApplyingAPIConfiguration = false
+        persistAPIKey(apiKey)
+        persistAPIBaseURL(baseURL)
+        rebuildContextService()
     }
 
     private func rebuildContextService() {
