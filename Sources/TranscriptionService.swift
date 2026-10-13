@@ -6,6 +6,8 @@ private let transcriptionLog = OSLog(subsystem: "com.zachlatta.freeflow", catego
 struct ValidatedAPIConfiguration: Sendable {
     let apiKey: String
     let baseURL: String
+    let transcriptionAPIURL: String
+    let transcriptionAPIKey: String
 }
 
 enum APIConfigurationSaveFlow {
@@ -15,6 +17,8 @@ enum APIConfigurationSaveFlow {
     static func validateAndApply(
         apiKey: String,
         baseURL: String,
+        transcriptionAPIURL: String,
+        transcriptionAPIKey: String,
         validator: @escaping @Sendable (String, String) async -> Bool = { key, url in
             await TranscriptionService.validateAPIKey(key, baseURL: url)
         },
@@ -23,8 +27,20 @@ enum APIConfigurationSaveFlow {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedBaseURL = trimmedBaseURL.isEmpty ? defaultBaseURL : trimmedBaseURL
+        let trimmedTranscriptionURL = transcriptionAPIURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTranscriptionKey = transcriptionAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveTranscriptionURL = trimmedTranscriptionURL.isEmpty ? resolvedBaseURL : trimmedTranscriptionURL
+        let effectiveTranscriptionKey = trimmedTranscriptionKey.isEmpty ? key : trimmedTranscriptionKey
         guard await validator(key, resolvedBaseURL) else { return false }
-        apply(ValidatedAPIConfiguration(apiKey: key, baseURL: resolvedBaseURL))
+        if effectiveTranscriptionURL != resolvedBaseURL || effectiveTranscriptionKey != key {
+            guard await validator(effectiveTranscriptionKey, effectiveTranscriptionURL) else { return false }
+        }
+        apply(ValidatedAPIConfiguration(
+            apiKey: key,
+            baseURL: resolvedBaseURL,
+            transcriptionAPIURL: trimmedTranscriptionURL,
+            transcriptionAPIKey: trimmedTranscriptionKey
+        ))
         return true
     }
 }

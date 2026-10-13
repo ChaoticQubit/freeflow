@@ -135,17 +135,11 @@ struct ProviderSettingsFields: View {
     }
 
     private func commitTranscriptionAPIURL() {
-        let trimmed = transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        transcriptionAPIURLInput = trimmed
-        guard appState.transcriptionAPIURL != trimmed else { return }
-        appState.transcriptionAPIURL = trimmed
+        transcriptionAPIURLInput = transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func commitTranscriptionAPIKey() {
-        let trimmed = transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        transcriptionAPIKeyInput = trimmed
-        guard appState.transcriptionAPIKey != trimmed else { return }
-        appState.transcriptionAPIKey = trimmed
+        transcriptionAPIKeyInput = transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var body: some View {
@@ -293,7 +287,6 @@ struct ProviderSettingsFields: View {
                     if !transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Button("Clear") {
                             transcriptionAPIURLInput = ""
-                            appState.transcriptionAPIURL = ""
                         }
                         .font(.caption)
                     }
@@ -319,7 +312,6 @@ struct ProviderSettingsFields: View {
                     if !transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Button("Clear") {
                             transcriptionAPIKeyInput = ""
-                            appState.transcriptionAPIKey = ""
                         }
                         .font(.caption)
                     }
@@ -1032,6 +1024,8 @@ struct GeneralSettingsView: View {
     private func validateAndSaveKey() {
         let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseURL = apiBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let transcriptionURL = transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let transcriptionKey = transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         isValidatingKey = true
         keyValidationError = nil
         keyValidationSuccess = false
@@ -1039,12 +1033,18 @@ struct GeneralSettingsView: View {
         Task {
             let valid = await APIConfigurationSaveFlow.validateAndApply(
                 apiKey: key,
-                baseURL: baseURL
+                baseURL: baseURL,
+                transcriptionAPIURL: transcriptionURL,
+                transcriptionAPIKey: transcriptionKey
             ) { configuration in
                 apiBaseURLInput = configuration.baseURL
+                transcriptionAPIURLInput = configuration.transcriptionAPIURL
+                transcriptionAPIKeyInput = configuration.transcriptionAPIKey
                 appState.updateAPIConfiguration(
                     apiKey: configuration.apiKey,
-                    baseURL: configuration.baseURL
+                    baseURL: configuration.baseURL,
+                    transcriptionAPIURL: configuration.transcriptionAPIURL,
+                    transcriptionAPIKey: configuration.transcriptionAPIKey
                 )
             }
             await MainActor.run {

@@ -308,12 +308,14 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     @Published var transcriptionAPIURL: String {
         didSet {
+            guard !isApplyingAPIConfiguration else { return }
             persistOptionalAPIValue(transcriptionAPIURL, account: transcriptionAPIURLStorageKey)
         }
     }
 
     @Published var transcriptionAPIKey: String {
         didSet {
+            guard !isApplyingAPIConfiguration else { return }
             persistOptionalAPIValue(transcriptionAPIKey, account: transcriptionAPIKeyStorageKey)
         }
     }
@@ -1005,13 +1007,22 @@ final class AppState: ObservableObject, @unchecked Sendable {
         )
     }
 
-    func updateAPIConfiguration(apiKey: String, baseURL: String) {
+    func updateAPIConfiguration(
+        apiKey: String,
+        baseURL: String,
+        transcriptionAPIURL: String,
+        transcriptionAPIKey: String
+    ) {
         isApplyingAPIConfiguration = true
         self.apiKey = apiKey
         self.apiBaseURL = baseURL
+        self.transcriptionAPIURL = transcriptionAPIURL
+        self.transcriptionAPIKey = transcriptionAPIKey
         isApplyingAPIConfiguration = false
         persistAPIKey(apiKey)
         persistAPIBaseURL(baseURL)
+        persistOptionalAPIValue(transcriptionAPIURL, account: transcriptionAPIURLStorageKey)
+        persistOptionalAPIValue(transcriptionAPIKey, account: transcriptionAPIKeyStorageKey)
         rebuildContextService()
     }
 

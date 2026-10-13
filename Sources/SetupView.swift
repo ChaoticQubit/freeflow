@@ -1137,18 +1137,26 @@ struct SetupView: View {
         let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseURL = apiBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedBaseURL = baseURL.isEmpty ? AppState.defaultAPIBaseURL : baseURL
+        let transcriptionURL = transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let transcriptionKey = transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         isValidatingKey = true
         keyValidationError = nil
 
         Task {
             let valid = await APIConfigurationSaveFlow.validateAndApply(
                 apiKey: key,
-                baseURL: resolvedBaseURL
+                baseURL: resolvedBaseURL,
+                transcriptionAPIURL: transcriptionURL,
+                transcriptionAPIKey: transcriptionKey
             ) { configuration in
                 apiBaseURLInput = configuration.baseURL
+                transcriptionAPIURLInput = configuration.transcriptionAPIURL
+                transcriptionAPIKeyInput = configuration.transcriptionAPIKey
                 appState.updateAPIConfiguration(
                     apiKey: configuration.apiKey,
-                    baseURL: configuration.baseURL
+                    baseURL: configuration.baseURL,
+                    transcriptionAPIURL: configuration.transcriptionAPIURL,
+                    transcriptionAPIKey: configuration.transcriptionAPIKey
                 )
             }
             await MainActor.run {
