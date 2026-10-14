@@ -108,15 +108,19 @@ enum LLMAPITransportTests {
         let omittedBody = try! JSONSerialization.jsonObject(with: bodyData(subsequent[0])!) as! [String: Any]
         TestSupport.expect(first.count == 2 && subsequent.count == 1 && omittedBody["temperature"] == nil, "Runtime rejection is cached and subsequent call omits temperature")
 
+        let staleSuite = "transport-stale-\(UUID().uuidString)"
+        let staleDefaults = UserDefaults(suiteName: staleSuite)!
+        defer { staleDefaults.removePersistentDomain(forName: staleSuite) }
+        let staleCache = TemperatureCapabilityCache(defaults: staleDefaults)
         let sharedEndpoint = UUID().uuidString
         var sharedRequest = URLRequest(url: URL(string: "https://provider.invalid/\(sharedEndpoint)/chat")!)
         sharedRequest.setValue("Bearer synthetic-test-token", forHTTPHeaderField: "Authorization")
         sharedRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         sharedRequest.httpBody = try! JSONSerialization.data(withJSONObject: ["model": "fixture", "temperature": 0, "top_p": 0.7, "max_completion_tokens": 128, "messages": []])
-        let staleObservation = TemperatureCapabilityCache.shared.beginObservation(for: sharedRequest)
-        _ = try! await perform([(400, rejected), (200, accepted)], endpoint: sharedEndpoint, cache: TemperatureCapabilityCache.shared)
-        TemperatureCapabilityCache.shared.record(.supported, for: sharedRequest, observation: staleObservation)
-        TestSupport.expect(TemperatureCapabilityCache.shared.capability(for: sharedRequest) == .unsupported, "Shared production cache ignores stale success after newer runtime rejection")
+        let staleObservation = staleCache.beginObservation(for: sharedRequest)
+        _ = try! await perform([(400, rejected), (200, accepted)], endpoint: sharedEndpoint, cache: staleCache)
+        staleCache.record(.supported, for: sharedRequest, observation: staleObservation)
+        TestSupport.expect(staleCache.capability(for: sharedRequest) == .unsupported, "Cache ignores stale success after newer runtime rejection")
 
         let supportedCache = TemperatureCapabilityCache(defaults: UserDefaults(suiteName: "transport-supported-\(UUID().uuidString)")!)
         let supportedEndpoint = UUID().uuidString
