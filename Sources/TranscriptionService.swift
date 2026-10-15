@@ -3,7 +3,7 @@ import os.log
 
 private let transcriptionLog = OSLog(subsystem: "com.zachlatta.freeflow", category: "Transcription")
 
-struct ValidatedAPIConfiguration: Sendable {
+struct ValidatedAPIConfiguration: Equatable, Sendable {
     let apiKey: String
     let baseURL: String
     let transcriptionAPIURL: String

@@ -16,6 +16,7 @@ struct FreeFlowTests {
         TranscriptionErrorPresentationCoreTests.run()
         TranscriptTextCoreTests.run()
         await TranscriptionServiceTests.run()
+        await APIConfigurationDraftTests.run()
         print("FreeFlowTests passed")
     }
 }

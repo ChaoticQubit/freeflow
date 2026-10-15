@@ -320,6 +320,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    // Publish only after the complete configuration transaction has persisted.
+    @Published private(set) var committedAPIConfiguration: ValidatedAPIConfiguration
+
     @Published var transcriptionModel: String {
         didSet {
             UserDefaults.standard.set(transcriptionModel, forKey: transcriptionModelStorageKey)
@@ -755,6 +758,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.apiBaseURL = apiBaseURL
         self.transcriptionAPIURL = transcriptionAPIURL
         self.transcriptionAPIKey = transcriptionAPIKey
+        self.committedAPIConfiguration = ValidatedAPIConfiguration(
+            apiKey: apiKey,
+            baseURL: apiBaseURL,
+            transcriptionAPIURL: transcriptionAPIURL,
+            transcriptionAPIKey: transcriptionAPIKey
+        )
         self.transcriptionModel = transcriptionModel
         self.postProcessingModel = postProcessingModel
         self.postProcessingFallbackModel = postProcessingFallbackModel
@@ -1024,6 +1033,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
         persistOptionalAPIValue(transcriptionAPIURL, account: transcriptionAPIURLStorageKey)
         persistOptionalAPIValue(transcriptionAPIKey, account: transcriptionAPIKeyStorageKey)
         rebuildContextService()
+        committedAPIConfiguration = ValidatedAPIConfiguration(
+            apiKey: apiKey,
+            baseURL: baseURL,
+            transcriptionAPIURL: transcriptionAPIURL,
+            transcriptionAPIKey: transcriptionAPIKey
+        )
     }
 
     private func rebuildContextService() {

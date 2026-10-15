@@ -525,14 +525,11 @@ struct GeneralSettingsView: View {
     @AppStorage("use_compact_overlay") private var useCompactOverlay = true
     @AppStorage(RecordingTimerPreference.storageKey) private var showRecordingTimer = RecordingTimerPreference.defaultEnabled
     @State private var screensVersion = 0
-    @State private var apiKeyInput: String = ""
-    @State private var apiBaseURLInput: String = ""
-    @State private var transcriptionAPIURLInput: String = ""
-    @State private var transcriptionAPIKeyInput: String = ""
+    @State private var apiDraft = APIConfigurationDraft()
     @State private var advancedProviderSettingsExpanded = false
     @State private var isValidatingKey = false
     @State private var keyValidationError: String?
-    @State private var keyValidationSuccess = false
+    @State private var successfulAPIConfiguration: ValidatedAPIConfiguration?
     @State private var customVocabularyInput: String = ""
     @FocusState private var customVocabularyFocused: Bool
     @State private var micPermissionGranted = false
@@ -747,26 +744,30 @@ struct GeneralSettingsView: View {
             .padding(24)
         }
         .onAppear {
-            apiKeyInput = appState.apiKey
-            apiBaseURLInput = appState.apiBaseURL
-            transcriptionAPIURLInput = appState.transcriptionAPIURL
-            transcriptionAPIKeyInput = appState.transcriptionAPIKey
+            apiDraft.present(appState.committedAPIConfiguration)
+            isValidatingKey = false
+            keyValidationError = nil
+            successfulAPIConfiguration = nil
             customVocabularyInput = appState.customVocabulary
             checkMicPermission()
             appState.refreshLaunchAtLoginStatus()
             Task { await githubCache.fetchIfNeeded() }
         }
         .onDisappear {
+            apiDraft.dismiss()
             commitCustomVocabulary()
         }
-        .onChange(of: appState.transcriptionAPIURL) { value in
-            if transcriptionAPIURLInput != value {
-                transcriptionAPIURLInput = value
+        .onChange(of: appState.committedAPIConfiguration) { saved in
+            apiDraft.reconcile(saved)
+            keyValidationError = nil
+            if successfulAPIConfiguration != saved {
+                successfulAPIConfiguration = nil
             }
         }
-        .onChange(of: appState.transcriptionAPIKey) { value in
-            if transcriptionAPIKeyInput != value {
-                transcriptionAPIKeyInput = value
+        .onChange(of: apiDraft.configuration) { value in
+            keyValidationError = nil
+            if successfulAPIConfiguration != value {
+                successfulAPIConfiguration = nil
             }
         }
     }
@@ -972,26 +973,22 @@ struct GeneralSettingsView: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
-                SecureField("Enter your Groq API key", text: $apiKeyInput)
+                SecureField("Enter your Groq API key", text: $apiDraft.apiKey)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
                     .disabled(isValidatingKey)
-                    .onChange(of: apiKeyInput) { _ in
-                        keyValidationError = nil
-                        keyValidationSuccess = false
-                    }
 
                 Button(isValidatingKey ? "Validating..." : "Save") {
                     validateAndSaveKey()
                 }
-                .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidatingKey)
+                .disabled(apiDraft.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidatingKey)
             }
 
             if let error = keyValidationError {
                 Label(error, systemImage: "xmark.circle.fill")
                     .foregroundStyle(.red)
                     .font(.caption)
-            } else if keyValidationSuccess {
+            } else if apiDraft.showsSavedSuccess(successfulAPIConfiguration, committed: appState.committedAPIConfiguration) {
                 Label("API key saved", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .font(.caption)
@@ -1001,9 +998,9 @@ struct GeneralSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
                     ProviderSettingsFields(
-                        apiBaseURLInput: $apiBaseURLInput,
-                        transcriptionAPIURLInput: $transcriptionAPIURLInput,
-                        transcriptionAPIKeyInput: $transcriptionAPIKeyInput,
+                        apiBaseURLInput: $apiDraft.baseURL,
+                        transcriptionAPIURLInput: $apiDraft.transcriptionAPIURL,
+                        transcriptionAPIKeyInput: $apiDraft.transcriptionAPIKey,
                         showsModelDescription: false
                     )
                 }
@@ -1022,24 +1019,23 @@ struct GeneralSettingsView: View {
     }
 
     private func validateAndSaveKey() {
-        let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseURL = apiBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let transcriptionURL = transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let transcriptionKey = transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isValidatingKey else { return }
+        let submission = apiDraft.submission
         isValidatingKey = true
         keyValidationError = nil
-        keyValidationSuccess = false
+        successfulAPIConfiguration = nil
 
-        Task {
+        Task { @MainActor in
+            var accepted: ValidatedAPIConfiguration?
             let valid = await APIConfigurationSaveFlow.validateAndApply(
-                apiKey: key,
-                baseURL: baseURL,
-                transcriptionAPIURL: transcriptionURL,
-                transcriptionAPIKey: transcriptionKey
+                apiKey: submission.configuration.apiKey,
+                baseURL: submission.configuration.baseURL,
+                transcriptionAPIURL: submission.configuration.transcriptionAPIURL,
+                transcriptionAPIKey: submission.configuration.transcriptionAPIKey
             ) { configuration in
-                apiBaseURLInput = configuration.baseURL
-                transcriptionAPIURLInput = configuration.transcriptionAPIURL
-                transcriptionAPIKeyInput = configuration.transcriptionAPIKey
+                if apiDraft.accept(configuration, for: submission) {
+                    accepted = configuration
+                }
                 appState.updateAPIConfiguration(
                     apiKey: configuration.apiKey,
                     baseURL: configuration.baseURL,
@@ -1047,13 +1043,13 @@ struct GeneralSettingsView: View {
                     transcriptionAPIKey: configuration.transcriptionAPIKey
                 )
             }
-            await MainActor.run {
-                isValidatingKey = false
-                if valid {
-                    keyValidationSuccess = true
-                } else {
-                    keyValidationError = "Validation failed. Please check your API key and provider settings, then try again."
-                }
+            guard apiDraft.isCurrent(submission) else { return }
+            isValidatingKey = false
+            if valid, let accepted, apiDraft.configuration == accepted,
+               appState.committedAPIConfiguration == accepted {
+                successfulAPIConfiguration = accepted
+            } else if !valid && apiDraft.matches(submission) {
+                keyValidationError = "Validation failed. Please check your API key and provider settings, then try again."
             }
         }
     }

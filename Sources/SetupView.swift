@@ -75,10 +75,7 @@ struct SetupView: View {
     @State private var currentStep = SetupStep.welcome
     @State private var micPermissionGranted = false
     @State private var accessibilityGranted = false
-    @State private var apiKeyInput: String = ""
-    @State private var apiBaseURLInput: String = ""
-    @State private var transcriptionAPIURLInput: String = ""
-    @State private var transcriptionAPIKeyInput: String = ""
+    @State private var apiDraft = APIConfigurationDraft()
     @State private var isValidatingKey = false
     @State private var keyValidationError: String?
     @State private var showingProviderSettingsSheet = false
@@ -146,7 +143,7 @@ struct SetupView: View {
                                     validateAndContinue()
                                 }
                                 .keyboardShortcut(.defaultAction)
-                                .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidatingKey)
+                                .disabled(apiDraft.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidatingKey)
                             } else if currentStep == .vocabulary {
                                 Button("Continue") {
                                     saveCustomVocabularyAndContinue()
@@ -195,10 +192,9 @@ struct SetupView: View {
         }
         .frame(width: 520, height: 680)
         .onAppear {
-            apiKeyInput = appState.apiKey
-            apiBaseURLInput = appState.apiBaseURL
-            transcriptionAPIURLInput = appState.transcriptionAPIURL
-            transcriptionAPIKeyInput = appState.transcriptionAPIKey
+            apiDraft.present(appState.committedAPIConfiguration)
+            isValidatingKey = false
+            keyValidationError = nil
             customVocabularyInput = appState.customVocabulary
             checkMicPermission()
             checkAccessibility()
@@ -207,17 +203,25 @@ struct SetupView: View {
             }
         }
         .onDisappear {
+            apiDraft.dismiss()
             accessibilityTimer?.invalidate()
             screenRecordingTimer?.invalidate()
             appState.resumeHotkeyMonitoringAfterShortcutCapture()
         }
         .sheet(isPresented: $showingProviderSettingsSheet) {
             SetupProviderSettingsSheet(
-                apiBaseURLInput: $apiBaseURLInput,
-                transcriptionAPIURLInput: $transcriptionAPIURLInput,
-                transcriptionAPIKeyInput: $transcriptionAPIKeyInput
+                apiBaseURLInput: $apiDraft.baseURL,
+                transcriptionAPIURLInput: $apiDraft.transcriptionAPIURL,
+                transcriptionAPIKeyInput: $apiDraft.transcriptionAPIKey
             )
                 .environmentObject(appState)
+        }
+        .onChange(of: appState.committedAPIConfiguration) { saved in
+            apiDraft.reconcile(saved)
+            keyValidationError = nil
+        }
+        .onChange(of: apiDraft.configuration) { _ in
+            keyValidationError = nil
         }
         .onChange(of: isCapturingShortcut) { isCapturing in
             if isCapturing {
@@ -422,13 +426,10 @@ struct SetupView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("API Key")
                             .font(.headline)
-                        SecureField("Paste your API key", text: $apiKeyInput)
+                        SecureField("Paste your API key", text: $apiDraft.apiKey)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(.body, design: .monospaced))
                             .disabled(isValidatingKey)
-                            .onChange(of: apiKeyInput) { _ in
-                                keyValidationError = nil
-                            }
 
                         if let error = keyValidationError {
                             Label(error, systemImage: "xmark.circle.fill")
@@ -1134,24 +1135,22 @@ struct SetupView: View {
     // MARK: - Actions
 
     func validateAndContinue() {
-        let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseURL = apiBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedBaseURL = baseURL.isEmpty ? AppState.defaultAPIBaseURL : baseURL
-        let transcriptionURL = transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let transcriptionKey = transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isValidatingKey else { return }
+        let submission = apiDraft.submission
         isValidatingKey = true
         keyValidationError = nil
 
-        Task {
+        Task { @MainActor in
+            var accepted: ValidatedAPIConfiguration?
             let valid = await APIConfigurationSaveFlow.validateAndApply(
-                apiKey: key,
-                baseURL: resolvedBaseURL,
-                transcriptionAPIURL: transcriptionURL,
-                transcriptionAPIKey: transcriptionKey
+                apiKey: submission.configuration.apiKey,
+                baseURL: submission.configuration.baseURL,
+                transcriptionAPIURL: submission.configuration.transcriptionAPIURL,
+                transcriptionAPIKey: submission.configuration.transcriptionAPIKey
             ) { configuration in
-                apiBaseURLInput = configuration.baseURL
-                transcriptionAPIURLInput = configuration.transcriptionAPIURL
-                transcriptionAPIKeyInput = configuration.transcriptionAPIKey
+                if apiDraft.accept(configuration, for: submission) {
+                    accepted = configuration
+                }
                 appState.updateAPIConfiguration(
                     apiKey: configuration.apiKey,
                     baseURL: configuration.baseURL,
@@ -1159,15 +1158,15 @@ struct SetupView: View {
                     transcriptionAPIKey: configuration.transcriptionAPIKey
                 )
             }
-            await MainActor.run {
-                isValidatingKey = false
-                if valid {
-                    withAnimation {
-                        currentStep = nextStep(currentStep)
-                    }
-                } else {
-                    keyValidationError = "Validation failed. Please check your API key and provider settings, then try again."
+            guard apiDraft.isCurrent(submission) else { return }
+            isValidatingKey = false
+            if valid {
+                if let accepted, apiDraft.configuration == accepted,
+                   appState.committedAPIConfiguration == accepted, currentStep == .apiKey {
+                    withAnimation { currentStep = nextStep(currentStep) }
                 }
+            } else if apiDraft.matches(submission) {
+                keyValidationError = "Validation failed. Please check your API key and provider settings, then try again."
             }
         }
     }
