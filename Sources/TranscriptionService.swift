@@ -4,11 +4,23 @@ import os.log
 private let transcriptionLog = OSLog(subsystem: "com.zachlatta.freeflow", category: "Transcription")
 
 class TranscriptionService {
+    private static let modelsSupportingVerboseJSON: Set<String> = [
+        // OpenAI's Whisper model supports segment metadata. The newer
+        // gpt-4o-transcribe family only supports the plain JSON format.
+        "whisper-1",
+        // Groq's hosted Whisper models support verbose_json and expose the
+        // segment metadata used by the hallucination filter below.
+        "whisper-large-v3",
+        "whisper-large-v3-turbo"
+    ]
+
     private let apiKey: String
     private let baseURL: URL
     private let transcriptionModel: String
     private let language: String?
-    private let transcriptionResponseFormat = "verbose_json"
+    private var transcriptionResponseFormat: String {
+        Self.responseFormat(forModel: transcriptionModel)
+    }
     private var transcriptionTimeoutSeconds: TimeInterval {
         let override = UserDefaults.standard.double(forKey: "transcription_timeout_seconds")
         return override > 0 ? override : 20
@@ -26,6 +38,11 @@ class TranscriptionService {
         self.transcriptionModel = trimmedModel.isEmpty ? "whisper-large-v3" : trimmedModel
         let trimmedLanguage = language?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.language = (trimmedLanguage?.isEmpty == false) ? trimmedLanguage : nil
+    }
+
+    static func responseFormat(forModel model: String) -> String {
+        let normalizedModel = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return modelsSupportingVerboseJSON.contains(normalizedModel) ? "verbose_json" : "json"
     }
 
     // Validate API key by hitting a lightweight endpoint
@@ -231,6 +248,8 @@ class TranscriptionService {
             return "Endpoint not found at \(provider) (HTTP 404). Base URL is likely wrong for this provider."
         case 413:
             return "Audio file too large for \(provider) (HTTP 413). Try a shorter recording."
+        case 400:
+            return "Provider rejected the request (HTTP 400). Check your model name and Base URL in Settings."
         case 429:
             return "Rate limit reached at \(provider) (HTTP 429). Wait a moment and try again."
         case 500..<600:
@@ -286,78 +305,12 @@ class TranscriptionService {
         return normalizedURL
     }
 
-    // Whisper-large-v3 hallucinates common short phrases on silence/background
-    // noise. Drop them when whisper itself reports a high no_speech_prob.
-    // Add a new (phrase, minNoSpeechProb) pair here to filter more hallucinations.
-    //
-    // Thresholds tuned on ~500 samples from quiet and noisy environments, including
-    // both positive cases (real "thank you" speech) and empty-audio cases. Kept
-    // conservative to minimize false positives (filtering real user speech).
-    // Normal speech included audios have very low no_speech_prob.
-    private let hallucinationPhrases = [
-        "thank you",
-        "thank you for watching",
-        "thank you very much",
-        "thank you so much",
-        "thanks for watching",
-        "please subscribe",
-        "like and subscribe",
-        "subtitles by",
-        "subtitles by the amara.org community",
-        "you"
-    ]
-
-    private let hallucinationNoSpeechThreshold = 0.1
-
     private func parseTranscript(from data: Data) throws -> String {
-        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let text = json["text"] as? String {
-            if isHallucination(text: text, json: json) {
-                return ""
-            }
-            return text
-        }
-
-        let plainText = String(data: data, encoding: .utf8) ?? ""
-        let text = plainText
-                .components(separatedBy: .newlines)
-                .joined(separator: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
+        do {
+            return try TranscriptionResponseParser.parse(data)
+        } catch TranscriptionResponseParsingError.invalidResponse {
             throw TranscriptionError.pollFailed("Invalid response")
         }
-
-        return text
-    }
-
-    private func isHallucination(text: String, json: [String: Any]) -> Bool {
-        let normalized = text
-            .lowercased()
-            .trimmingCharacters(in: CharacterSet.punctuationCharacters.union(.whitespacesAndNewlines))
-        guard hallucinationPhrases.contains(normalized) else {
-            return false
-        }
-
-        guard let segments = json["segments"] as? [[String: Any]] else {
-            os_log(
-                .info,
-                log: transcriptionLog,
-                "Skipping hallucination filter for '%{public}@': provider response has no segments/no_speech metadata",
-                normalized
-            )
-            return false
-        }
-
-        guard let noSpeechProb = segments.first?["no_speech_prob"] as? Double else {
-            os_log(
-                .info,
-                log: transcriptionLog,
-                "Skipping hallucination filter for '%{public}@': provider response omitted no_speech_prob",
-                normalized
-            )
-            return false
-        }
-        return noSpeechProb >= hallucinationNoSpeechThreshold
     }
 }
 
