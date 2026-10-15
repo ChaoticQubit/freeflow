@@ -111,7 +111,7 @@ defaults delete com.zachlatta.freeflow context_request_timeout_seconds
 
 ## Configuring Without the Settings Window
 
-Every setting FreeFlow exposes in Settings can also be written from a shell, so a machine can be set up from dotfiles, a setup script, or a Nix or Homebrew module instead of by clicking through the UI.
+The preferences and credentials documented below can be written from a shell, so a machine can be set up from dotfiles, a setup script, or a Nix or Homebrew module. Launch at Login is managed separately through macOS service registration.
 
 Settings live in two places:
 
