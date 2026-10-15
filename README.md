@@ -217,33 +217,63 @@ A value you wrote yourself with `-string` is stored as text, so plain `defaults 
 
 ### API credentials
 
-These are not stored in `defaults`. The recipe below updates only the two named entries, preserving other credentials and migration metadata. It restricts an existing file to owner read/write before updating it and creates a new file with those permissions. Invalid existing JSON stops the recipe without replacing its contents. Replace the placeholder key before running it; use `FreeFlow Dev` in the path for the default development app.
+These are not stored in `defaults`. Run the constant command below, then enter the key at its hidden terminal prompt. For provisioning, pipe the key directly from your secret manager to this command. Do not put the key in the command text, a shell variable, or the environment. The installed macOS Ruby reads one UTF-8 line from stdin and encodes it as JSON data. Use `FreeFlow Dev` in the path for the default development app.
+
+The recipe updates the general key and URL, preserves other string entries, and adds missing migration metadata as described below. It restricts an existing file to owner read/write before reading it, stages the update in a private 0600 sibling file, and replaces the original only after validation and a complete write. Malformed JSON, non-string values, keys over 16 KiB, existing files over 1 MiB, and empty or cancelled input fail without replacing the original contents. Permission tightening may still occur on failure.
 
 ```bash
-(
-  set -eu
-  umask 077
-  SETTINGS="$HOME/Library/Application Support/FreeFlow/.settings"
-  mkdir -p "$(dirname "$SETTINGS")"
-  if [ -e "$SETTINGS" ]; then
-    test -f "$SETTINGS"
-    chmod 600 "$SETTINGS"
-  fi
-  TEMP_SETTINGS=$(mktemp "$SETTINGS.XXXXXX")
-  trap 'rm -f "$TEMP_SETTINGS"' EXIT
-  if [ -e "$SETTINGS" ]; then
-    plutil -convert xml1 -o "$TEMP_SETTINGS" "$SETTINGS"
+/usr/bin/ruby -rjson -rio/console -rtempfile -rfileutils -e '
+begin
+  File.umask(0o077)
+  settings = File.join(ENV.fetch("HOME"), "Library/Application Support/FreeFlow/.settings")
+  directory = File.dirname(settings)
+  FileUtils.mkdir_p(directory, mode: 0o700)
+  raise IOError if File.symlink?(settings)
+  values = {}
+  if File.exist?(settings)
+    raise IOError unless File.file?(settings)
+    File.chmod(0o600, settings)
+    raw = File.binread(settings, 1_048_577).force_encoding(Encoding::UTF_8)
+    raise ArgumentError unless raw.bytesize <= 1_048_576 && raw.valid_encoding?
+    values = JSON.parse(raw)
+  end
+  raise TypeError unless values.is_a?(Hash) &&
+    values.all? { |name, value| name.is_a?(String) && value.is_a?(String) }
+  STDIN.set_encoding(Encoding::UTF_8)
+  key = if STDIN.tty?
+    STDIN.noecho do
+      STDERR.print("API key: ")
+      STDIN.gets(16_386)
+    end
   else
-    plutil -create xml1 "$TEMP_SETTINGS"
-  fi
-  plutil -replace groq_api_key -string 'gsk_...' "$TEMP_SETTINGS"
-  plutil -replace api_base_url -string 'https://api.groq.com/openai/v1' "$TEMP_SETTINGS"
-  plutil -convert json "$TEMP_SETTINGS"
-  mv -f "$TEMP_SETTINGS" "$SETTINGS"
-)
+    STDIN.gets(16_386)
+  end
+  STDERR.puts if STDIN.tty?
+  raise ArgumentError if key.nil?
+  key = key.chomp
+  raise ArgumentError unless key.valid_encoding? &&
+    key.bytesize <= 16_384 && !key.strip.empty?
+  values["groq_api_key"] = key
+  values["api_base_url"] = "https://api.groq.com/openai/v1"
+  values["keychain_migration_done"] = "true" unless values.key?("keychain_migration_done")
+  Tempfile.create([".settings.", ".tmp"], directory) do |file|
+    file.chmod(0o600)
+    file.write(JSON.generate(values))
+    file.flush
+    file.fsync
+    file.close
+    File.rename(file.path, settings)
+  end
+rescue StandardError, Interrupt
+  STDERR.puts("Credential update cancelled or failed.")
+  exit 1
+end
+'
 ```
 
 The recognised keys are `groq_api_key`, `api_base_url`, `transcription_api_url` and `transcription_api_key`. Omit any you do not need.
+
+Successful provisioning also sets `keychain_migration_done` to the string `true` if that entry is absent, preserving an existing value exactly. This global marker prevents first-launch legacy Keychain migration from overwriting the explicit key. Its presence suppresses import for every account, including transcription overrides you have not provisioned. The recipe does not merge or delete legacy Keychain entries, and it leaves the runtime migration behavior unchanged.
 
 ## Contributing
 
