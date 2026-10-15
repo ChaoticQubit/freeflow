@@ -115,10 +115,10 @@ Every setting FreeFlow exposes in Settings can also be written from a shell, so 
 
 Settings live in two places:
 
-- **macOS defaults**, under the `com.zachlatta.freeflow` domain
-- **`~/Library/Application Support/FreeFlow/.settings`**, a JSON file holding API credentials, kept at mode `600`
+- **macOS defaults**, under `com.zachlatta.freeflow` for release builds or `com.zachlatta.freeflow.dev` for the default development build
+- **API credentials**, in `~/Library/Application Support/FreeFlow/.settings` for release builds or `~/Library/Application Support/FreeFlow Dev/.settings` for the default development build, kept at mode `600`
 
-FreeFlow reads its settings once at launch and does not watch for changes, so **quit FreeFlow before writing and start it afterwards**. Writing while it is running has no effect and can be overwritten.
+Quit the matching app before changing settings externally and start it afterwards. FreeFlow loads transcription, shortcut, and macro settings at launch; external edits while it is running can be overwritten. Examples below target the release app. For `make` or `make run`, use `com.zachlatta.freeflow.dev` in every `defaults` command and `FreeFlow Dev` in the credential path. Custom `BUNDLE_ID` and `APP_NAME` builds use their configured domain and app directory.
 
 ```bash
 defaults write com.zachlatta.freeflow preserve_exact_wording -bool true
@@ -136,7 +136,7 @@ defaults write com.zachlatta.freeflow shortcut_start_delay -float 0.15
 | `transcription_model` | string | e.g. `whisper-large-v3-turbo` |
 | `transcription_language` | string | empty for auto-detect |
 | `output_language` | string | empty to keep the spoken language |
-| `selected_microphone_id` | string | empty for the system default |
+| `selected_microphone_id` | string | `default` for the system default |
 | `realtime_streaming_enabled` | bool | |
 | `realtime_streaming_model` | string | |
 
@@ -152,7 +152,8 @@ defaults write com.zachlatta.freeflow shortcut_start_delay -float 0.15
 | `custom_vocabulary` | string | newline-separated terms |
 | `instruction_execution_guard_enabled` | bool | |
 | `preserve_exact_wording` | bool | |
-| `context_screenshot_max_dimension` | integer | |
+| `context_screenshot_max_dimension` | integer | `1024`, `768`, `640`, or `512`; other values use `1024` |
+| `context_desktop_screenshot_fallback_enabled` | bool | default `true`; capture the desktop when the active window cannot be captured |
 
 **Edit Mode**
 
@@ -179,6 +180,7 @@ defaults write com.zachlatta.freeflow shortcut_start_delay -float 0.15
 |---|---|---|
 | `show_menu_bar_icon` | bool | |
 | `use_compact_overlay` | bool | |
+| `show_recording_timer` | bool | default `false`; show elapsed recording time |
 | `overlay_display_id` | integer | `0` for the active display |
 | `alert_sounds_enabled` | bool | |
 | `sound_volume` | float | `0` to `1` |
@@ -215,25 +217,37 @@ A value you wrote yourself with `-string` is stored as text, so plain `defaults 
 
 ### API credentials
 
-These are not stored in `defaults`. Write `~/Library/Application Support/FreeFlow/.settings` instead, and keep it owner-readable only so your key is not world-readable:
-
-Create the file with restrictive permissions *before* writing the key to it, so it is never briefly readable by other local users:
+These are not stored in `defaults`. The recipe below updates only the two named entries, preserving other credentials and migration metadata. It restricts an existing file to owner read/write before updating it and creates a new file with those permissions. Invalid existing JSON stops the recipe without replacing its contents. Replace the placeholder key before running it; use `FreeFlow Dev` in the path for the default development app.
 
 ```bash
-SETTINGS=~/Library/Application\ Support/FreeFlow/.settings
-
-mkdir -p "$(dirname "$SETTINGS")"
-(umask 077; : > "$SETTINGS")
-
-cat > "$SETTINGS" <<'JSON'
-{
-  "groq_api_key": "gsk_...",
-  "api_base_url": "https://api.groq.com/openai/v1"
-}
-JSON
+(
+  set -eu
+  umask 077
+  SETTINGS="$HOME/Library/Application Support/FreeFlow/.settings"
+  mkdir -p "$(dirname "$SETTINGS")"
+  if [ -e "$SETTINGS" ]; then
+    test -f "$SETTINGS"
+    chmod 600 "$SETTINGS"
+  fi
+  TEMP_SETTINGS=$(mktemp "$SETTINGS.XXXXXX")
+  trap 'rm -f "$TEMP_SETTINGS"' EXIT
+  if [ -e "$SETTINGS" ]; then
+    plutil -convert xml1 -o "$TEMP_SETTINGS" "$SETTINGS"
+  else
+    plutil -create xml1 "$TEMP_SETTINGS"
+  fi
+  plutil -replace groq_api_key -string 'gsk_...' "$TEMP_SETTINGS"
+  plutil -replace api_base_url -string 'https://api.groq.com/openai/v1' "$TEMP_SETTINGS"
+  plutil -convert json "$TEMP_SETTINGS"
+  mv -f "$TEMP_SETTINGS" "$SETTINGS"
+)
 ```
 
 The recognised keys are `groq_api_key`, `api_base_url`, `transcription_api_url` and `transcription_api_key`. Omit any you do not need.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up the project, build, test, and submit changes.
 
 ## License
 

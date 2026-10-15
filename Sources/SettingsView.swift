@@ -534,6 +534,7 @@ struct GeneralSettingsView: View {
     @AppStorage("show_menu_bar_icon") private var showMenuBarIcon = true
     @AppStorage("overlay_display_id") private var overlayDisplayID = 0
     @AppStorage("use_compact_overlay") private var useCompactOverlay = true
+    @AppStorage(RecordingTimerPreference.storageKey) private var showRecordingTimer = RecordingTimerPreference.defaultEnabled
     @State private var screensVersion = 0
     @State private var apiKeyInput: String = ""
     @State private var apiBaseURLInput: String = ""
@@ -1139,6 +1140,11 @@ struct GeneralSettingsView: View {
                 isMinimalist: false,
                 selection: $useCompactOverlay
             )
+
+            Toggle("Show recording timer", isOn: $showRecordingTimer)
+            Text("When off, the minimalist overlay shows a waveform instead of the timer, and the drop-down pill hides the timer. Applies to the next recording.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             Divider()
 
@@ -1957,6 +1963,15 @@ struct PromptsSettingsView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Allow full-desktop screenshot fallback", isOn: $appState.desktopScreenshotFallbackEnabled)
+                Text("When active-window capture fails, FreeFlow can capture the full desktop, including other apps, and send it to your configured context provider. Turn this off to continue without a screenshot when active-window capture fails. Applies to new context captures.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
             // Test section
             VStack(alignment: .leading, spacing: 8) {
                 Text("Test Context Prompt")
@@ -2037,7 +2052,7 @@ struct PromptsSettingsView: View {
                     contextTestOutput = context.contextSummary
                     contextTestPrompt = prompt
                 } else {
-                    contextTestError = "Context inference returned no result. This may be a permissions issue or the API could not be reached."
+                    contextTestError = context.contextSummary
                     contextTestOutput = context.contextSummary
                 }
                 contextTestRunning = false
@@ -2322,10 +2337,23 @@ struct RunLogEntryView: View {
                                     }
 
                                     if !item.contextSummary.isEmpty {
-                                        Text(item.contextSummary)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .textSelection(.enabled)
+                                        if ContextInferenceFailure.isFailureSummary(item.contextSummary) {
+                                            Label("Context summary failed", systemImage: "exclamationmark.triangle.fill")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(.orange)
+                                            Text(item.contextSummary)
+                                                .font(.caption)
+                                                .foregroundStyle(.orange)
+                                                .textSelection(.enabled)
+                                            Text("No usable activity summary. Dictation can continue.")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            Text(item.contextSummary)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .textSelection(.enabled)
+                                        }
                                     } else {
                                         Text("No context captured")
                                             .font(.caption)
