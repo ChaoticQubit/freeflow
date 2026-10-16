@@ -45,3 +45,18 @@ Task 1 baseline: the published branch pins v1.2.0; current stable is v1.3.1. Its
 Ruling: use public-release byte verification and official cask checks for this declarative change instead of adding a test that mirrors fixed strings. No application logic changes or test dependency installations are needed.
 
 Task 1 implementation: upstream merge `5795698` is recorded. The obsolete pin comparison failed before editing; the new pin matches the downloaded artifact and Homebrew's native cask loader. Release YAML has zero diff against current upstream. Graph refresh completed. Homebrew style/audit prerequisites are unavailable without installation. After one 180-second timeout, a fresh `make check` exited 0 in 115 seconds with `FreeFlowTests passed` and configuration/shell validation passing. Existing Swift availability and Ruby ffi extension warnings are recorded in the decision document. The implementation is ready to freeze for root's required review tracks; upstream tap approval and full Homebrew style/audit remain unresolved.
+
+### Task 2: Refresh the final target against newer upstream
+
+Files: merge the exact upstream source revision and update this plan plus `docs/agent-decisions.md`. Change `Casks/freeflow.rb` only if the actual published stable DMG differs from its existing verified pin. Preserve the proposed Homebrew guidance and upstream release workflow.
+
+Interfaces: consume upstream commit `797a3f32e6b525b8d942512db2801466d3a651f7`, official release metadata, and downloaded stable DMG bytes; produce a history-preserving branch head, current check evidence, and a frozen handoff for root's final review.
+
+- [x] Verify the existing worktree and official release endpoints. The exact v1.3.2 release endpoint returns HTTP 404; latest stable remains v1.3.1. Keep the existing cask version and checksum pending independent downloaded-byte verification.
+- [x] Merge the authorized upstream SHA normally and confirm the release workflow remains byte-identical to that target.
+- [x] Verify the downloaded stable asset, native Ruby/Homebrew cask checks, current `make check`, and `git diff --check`; record elapsed times and the existing Homebrew dependency gap.
+- [x] Refresh the isolated graph, commit without pushing, and hand the exact head plus receipt to root for the final review tracks.
+
+Task 2 ruling: published release metadata and downloaded artifact bytes determine the cask pin. A newer upstream source version alone does not authorize a different download URL or checksum. This mechanical refresh uses the existing design and checks without adding test scaffolding.
+
+Task 2 implementation: merge `87ece29db92a720f18027cb7a3997d8d56b5aab2` preserves the published history and includes exact upstream `797a3f32e6b525b8d942512db2801466d3a651f7`. The re-downloaded v1.3.1 DMG matches both the existing cask and GitHub's digest, so no cask source change was made. `make check` passed in 60.25 seconds; native cask validation passed in 1.79 seconds; Ruby syntax and whitespace validation passed. The release workflow has zero diff from the new upstream target. Graph refresh reports 1,537 nodes and 3,635 edges. Style/audit still lack installed RuboCop prerequisites. Exact frozen head and command evidence are recorded in the external refresh receipt for root's coordinated review.

@@ -43,3 +43,27 @@ The release workflow is now byte-identical to `upstream/main`, preserving public
 The first `make check` attempt completed application typechecking and reached test compilation, then the local 180-second execution limit expired. A fresh run with a 600-second limit exited 0 in 115 seconds: `FreeFlowTests passed`, both property-list files passed lint, and shell validation completed. It emitted existing `AVAudioConverter` Sendable availability warnings at `Sources/AudioRecorder.swift:105`, `:106`, `:513`, and `:837`, plus a Ruby `ffi-1.16.3` extension warning. No tool installation or application-source changes were made for these environment/upstream warnings.
 
 `git diff --check` passes. `graphify update .` rebuilt the isolated AST cache with 1,448 nodes and 3,354 edges after the changes. The cache symlink, `.superpowers/`, and `.env.*` are ignored; no cache or credentials are committed.
+
+## 2026-10-16 - PR #284: upstream refresh before final publication
+
+Goal: preserve the reviewed Homebrew scope while bringing the existing branch up to verified upstream commit `797a3f32e6b525b8d942512db2801466d3a651f7` before final review.
+
+Constraints: use a normal history-preserving merge; retain the proposed tap and pending ownership decision from #283; keep the release workflow byte-identical to the new upstream target; preserve the untracked `.serena/` directory; do not install tools, invoke live providers, publish a release, push, or run additional review tracks from this worker.
+
+Decisions: merge the exact authorized upstream commit and rerun its current `make check` plus cask, checksum, and whitespace validation. On 2026-10-16, GitHub's official latest-release endpoint and release list identify v1.3.1 as the latest published stable release; the v1.3.2 release endpoint returns HTTP 404. Retain the v1.3.1 cask pin unless a published stable DMG proves a different value. This supersedes the unverified assumption that upstream's newer source revision implied a published v1.3.2 artifact.
+
+Rejected alternatives: do not infer release availability from version text or commit messages, substitute an unpublished asset, replace the checksum, rebase published history, add release automation, or install missing Homebrew developer dependencies.
+
+Risks: upstream application changes can expose new local check failures. Homebrew style/audit remain unverified if their existing dependency prerequisites are unavailable. The tap location and update ownership remain an upstream maintainer decision.
+
+Acceptance criteria: the authorized upstream SHA is an ancestor of the new branch head; current checks pass; the cask resolves the actual latest stable version and independently verified published DMG bytes; the release workflow has zero diff from the new upstream target; no unrelated files are changed; the updated graph and evidence receipt are handed to root for the coordinated final review.
+
+Unresolved questions: upstream maintainers still need to confirm the tap location and cask update ownership. There is no authorized installation of missing Homebrew developer dependencies.
+
+Refresh verification: ordinary merge `87ece29db92a720f18027cb7a3997d8d56b5aab2` records both the previous reviewed head and the exact authorized upstream SHA as parents. It completed without conflicts. The release workflow remains byte-identical to `797a3f32e6b525b8d942512db2801466d3a651f7`, and the Homebrew instructions still identify the tap as proposed pending #283.
+
+The official stable DMG was downloaded again without mounting or installation: 11,663,498 bytes, SHA-256 `17392f0dbc64921d67208e81e8e4b81963284ac673be7a812f7323255b8f5fe6`, matching GitHub's release-asset digest. No cask edit was necessary. `ruby -c Casks/freeflow.rb` and Homebrew's native content loader pass; the loader verifies the exact version, checksum, release URL, automatic-update setting, and macOS >= 13 dependency. The successful native loader check took 1.79 seconds. Its first invocation omitted the installed loader's required `config:` argument; using `Cask::Config.new` corrected that local check invocation without changing project code.
+
+Current `make check` exited 0 in 60.25 seconds with `FreeFlowTests passed`, both property lists accepted, and shell/YAML validation completed. Existing `AVAudioConverter` macOS availability warnings remain unchanged. `git diff --check` passes. The isolated AST graph refresh reports 1,537 nodes, 3,635 edges, and 158 communities.
+
+Homebrew's current installed source remains Nix-managed. RuboCop gem specifications are still absent, and both style/audit commands retain their bundler-gem installation prerequisite. Neither command was invoked, and nothing was installed. Native cask checks remain separate evidence rather than a substitute for style/audit. The receipt and command logs are retained outside the checkout at `/private/tmp/freeflow-review-20261015/pr284-upstream-refresh.md` and its sibling evidence directory. Root owns the final review and publication decision.
