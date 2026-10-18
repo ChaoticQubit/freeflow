@@ -93,7 +93,7 @@ enum CredentialRecipeTests {
         for original in invalid {
             try withFixture { directory, settings in
                 try original.write(to: settings)
-                let result = try runRecipe(home: directory)
+                let result = try runRecipe(home: directory, input: nil)
                 try expectFailure(result, settings: settings, original: original)
             }
         }
@@ -185,7 +185,7 @@ enum CredentialRecipeTests {
 
     private static func runRecipe(
         home: URL, appName: String = "FreeFlow",
-        input: Data = Data((syntheticKey + "\n").utf8), observeArguments: Bool = false
+        input: Data? = Data((syntheticKey + "\n").utf8), observeArguments: Bool = false
     ) throws -> RecipeResult {
         let readme = try String(contentsOfFile: "README.md", encoding: .utf8)
         let section = readme.components(separatedBy: "### API credentials")[1]
@@ -213,7 +213,7 @@ enum CredentialRecipeTests {
                 Thread.sleep(forTimeInterval: 0.01)
             }
         }
-        if process.isRunning {
+        if process.isRunning, let input {
             try standardInput.fileHandleForWriting.write(contentsOf: input)
         }
         try standardInput.fileHandleForWriting.close()
