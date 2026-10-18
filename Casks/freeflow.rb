@@ -21,7 +21,7 @@ cask "freeflow" do
             login_item: "FreeFlow"
 
   zap trash: [
-    "~/Library/Application Support/FreeFlow",
+    "~/Library/Application Support/FreeFlow/is-recording",
     "~/Library/Caches/com.zachlatta.freeflow",
     "~/Library/HTTPStorages/com.zachlatta.freeflow",
     "~/Library/Preferences/com.zachlatta.freeflow.plist",
